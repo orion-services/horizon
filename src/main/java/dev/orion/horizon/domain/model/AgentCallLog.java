@@ -1,58 +1,135 @@
-package com.orion.horizon.domain.model;
+/*
+ * Copyright 2026 Orion Services.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package dev.orion.horizon.domain.model;
 
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Log de uma chamada a um agente/LLM.
+ * Registro imutável de uma chamada a um agente ou a um modelo LLM.
  *
- * <p>Este objeto é pensado para persistência (tabela {@code agent_calls}) e
- * para auditoria/diagnóstico em runtime.
+ * <p>Destina-se à persistência (tabela {@code agent_calls}) e à auditoria ou ao
+ * diagnóstico em tempo de execução.
  */
 public final class AgentCallLog {
+    /**
+     * Identificador do job de crawl ao qual esta chamada está associada.
+     */
     private final UUID jobId;
+    /**
+     * Identificador lógico da thread (conversação ou correlação no provedor).
+     */
     private final String threadId;
+    /**
+     * Função do agente na pipeline (ex.: {@code ranker}, {@code extractor}).
+     */
     private final String agentRole;
+    /**
+     * Nome do provedor da API (ex.: {@code openai}, {@code anthropic}).
+     */
     private final String provider;
+    /**
+     * Identificador do modelo (ex.: {@code gpt-4.1}).
+     */
     private final String model;
+    /**
+     * URL da página que forneceu o contexto desta chamada.
+     */
     private final String pageUrl;
+    /**
+     * Índice do fragmento de texto na página (base zero); {@code null} se não
+     * aplicável.
+     */
     private final Integer chunkIndex;
+    /**
+     * Quantidade total de fragmentos da página; {@code null} se não aplicável.
+     */
     private final Integer chunkTotal;
+    /**
+     * Conteúdo do prompt de sistema enviado ao modelo.
+     */
     private final String systemPrompt;
+    /**
+     * Conteúdo do prompt de usuário enviado ao modelo.
+     */
     private final String userPrompt;
+    /**
+     * Resposta textual bruta do provedor, antes de parsing estruturado.
+     */
     private final String rawResponse;
+    /**
+     * Relevância obtida pelo parsing da resposta; {@code null} se ausente ou
+     * não aplicável.
+     */
     private final Boolean parsedRelevant;
+    /**
+     * Confiança associada ao resultado parseado; {@code null} se ausente ou não
+     * aplicável.
+     */
     private final Double confidence;
+    /**
+     * Tokens de entrada reportados pela API; {@code null} se desconhecido.
+     */
     private final Integer inputTokens;
+    /**
+     * Tokens de saída reportados pela API; {@code null} se desconhecido.
+     */
     private final Integer outputTokens;
+    /**
+     * Tempo entre o envio da requisição e a resposta completa, em
+     * milissegundos.
+     */
     private final Long latencyMs;
+    /**
+     * Código de status HTTP da resposta; {@code null} se não aplicável.
+     */
     private final Integer httpStatus;
+    /**
+     * Detalhe do erro quando a chamada falha; {@code null} se não houve falha.
+     */
     private final String errorMessage;
+    /**
+     * Instantâneo em que a chamada foi efetuada ou registrada.
+     */
     private final Instant calledAt;
 
     /**
-     * Cria um log de chamada do agente.
+     * Cria um registro de chamada ao agente ou ao modelo.
      *
-     * @param jobId id do job ao qual a chamada pertence
-     * @param threadId id lógico da thread
-     * @param agentRole papel do agente (ex.: ranker, extractor)
-     * @param provider provedor (ex.: openai, anthropic)
-     * @param model modelo (ex.: gpt-4.1)
-     * @param pageUrl url associada ao contexto da chamada
-     * @param chunkIndex índice do chunk (0-based) quando aplicável
-     * @param chunkTotal total de chunks quando aplicável
-     * @param systemPrompt prompt de sistema utilizado
-     * @param userPrompt prompt de usuário utilizado
-     * @param rawResponse resposta bruta retornada pelo provedor
-     * @param parsedRelevant valor parseado de relevância quando aplicável
-     * @param confidence confiança parseada quando aplicável
-     * @param inputTokens tokens de entrada consumidos
-     * @param outputTokens tokens de saída gerados
+     * @param jobId identificador do job de crawl
+     * @param threadId identificador lógico da thread
+     * @param agentRole função do agente na pipeline
+     * @param provider nome do provedor da API
+     * @param model identificador do modelo
+     * @param pageUrl URL da página de contexto
+     * @param chunkIndex índice do fragmento (base zero), ou {@code null}
+     * @param chunkTotal total de fragmentos, ou {@code null}
+     * @param systemPrompt prompt de sistema enviado ao modelo
+     * @param userPrompt prompt de usuário enviado ao modelo
+     * @param rawResponse resposta bruta do provedor
+     * @param parsedRelevant relevância parseada, ou {@code null}
+     * @param confidence confiança parseada, ou {@code null}
+     * @param inputTokens tokens de entrada, ou {@code null}
+     * @param outputTokens tokens de saída, ou {@code null}
      * @param latencyMs latência em milissegundos
-     * @param httpStatus status HTTP observado quando aplicável
-     * @param errorMessage mensagem de erro quando aplicável
-     * @param calledAt instante em que a chamada ocorreu
+     * @param httpStatus código HTTP da resposta, ou {@code null}
+     * @param errorMessage mensagem de erro, ou {@code null}
+     * @param calledAt instante da chamada
      */
     public AgentCallLog(
             final UUID jobId,
@@ -96,97 +173,135 @@ public final class AgentCallLog {
         this.calledAt = calledAt;
     }
 
-    /** @return id do job. */
+    /**
+     * @return o identificador do job de crawl associado a esta chamada
+     */
     public UUID jobId() {
         return jobId;
     }
 
-    /** @return id lógico da thread. */
+    /**
+     * @return o identificador lógico da thread
+     */
     public String threadId() {
         return threadId;
     }
 
-    /** @return papel do agente. */
+    /**
+     * @return a função do agente na pipeline
+     */
     public String agentRole() {
         return agentRole;
     }
 
-    /** @return provedor. */
+    /**
+     * @return o nome do provedor da API
+     */
     public String provider() {
         return provider;
     }
 
-    /** @return modelo. */
+    /**
+     * @return o identificador do modelo
+     */
     public String model() {
         return model;
     }
 
-    /** @return url de página associada. */
+    /**
+     * @return a URL da página de contexto
+     */
     public String pageUrl() {
         return pageUrl;
     }
 
-    /** @return índice do chunk. */
+    /**
+     * @return o índice do fragmento de texto (base zero), ou {@code null}
+     */
     public Integer chunkIndex() {
         return chunkIndex;
     }
 
-    /** @return total de chunks. */
+    /**
+     * @return o total de fragmentos da página, ou {@code null}
+     */
     public Integer chunkTotal() {
         return chunkTotal;
     }
 
-    /** @return prompt de sistema. */
+    /**
+     * @return o prompt de sistema enviado ao modelo
+     */
     public String systemPrompt() {
         return systemPrompt;
     }
 
-    /** @return prompt de usuário. */
+    /**
+     * @return o prompt de usuário enviado ao modelo
+     */
     public String userPrompt() {
         return userPrompt;
     }
 
-    /** @return resposta bruta. */
+    /**
+     * @return a resposta bruta do provedor
+     */
     public String rawResponse() {
         return rawResponse;
     }
 
-    /** @return relevância parseada quando aplicável. */
+    /**
+     * @return a relevância parseada, ou {@code null}
+     */
     public Boolean parsedRelevant() {
         return parsedRelevant;
     }
 
-    /** @return confiança parseada quando aplicável. */
+    /**
+     * @return a confiança parseada, ou {@code null}
+     */
     public Double confidence() {
         return confidence;
     }
 
-    /** @return tokens de entrada. */
+    /**
+     * @return os tokens de entrada reportados pela API, ou {@code null}
+     */
     public Integer inputTokens() {
         return inputTokens;
     }
 
-    /** @return tokens de saída. */
+    /**
+     * @return os tokens de saída reportados pela API, ou {@code null}
+     */
     public Integer outputTokens() {
         return outputTokens;
     }
 
-    /** @return latência em ms. */
+    /**
+     * @return a latência em milissegundos
+     */
     public Long latencyMs() {
         return latencyMs;
     }
 
-    /** @return status HTTP quando aplicável. */
+    /**
+     * @return o código de status HTTP, ou {@code null}
+     */
     public Integer httpStatus() {
         return httpStatus;
     }
 
-    /** @return mensagem de erro quando aplicável. */
+    /**
+     * @return a mensagem de erro, ou {@code null}
+     */
     public String errorMessage() {
         return errorMessage;
     }
 
-    /** @return instante da chamada. */
+    /**
+     * @return o instante em que a chamada foi efetuada ou registrada
+     */
     public Instant calledAt() {
         return calledAt;
     }
