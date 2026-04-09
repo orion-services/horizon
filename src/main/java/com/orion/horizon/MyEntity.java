@@ -3,12 +3,14 @@ package com.orion.horizon;
 import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.Entity;
 
-
 /**
  * Example JPA entity defined as a Panache Entity.
- * An ID field of Long type is provided, if you want to define your own ID field extends <code>PanacheEntityBase</code> instead.
  *
- * This uses the active record pattern, you can also use the repository pattern instead:
+ * <p>An ID field of Long type is provided. If you want to define your own ID
+ * field, extend {@code PanacheEntityBase} instead.
+ *
+ * <p>This uses the active record pattern. You can also use the repository
+ * pattern instead. See
  * {@see https://quarkus.io/guides/hibernate-orm-panache#solution-2-using-the-repository-pattern}.
  *
  * Usage:
@@ -25,5 +27,6 @@ import jakarta.persistence.Entity;
  */
 @Entity
 public class MyEntity extends PanacheEntity {
+    /** Example field. */
     public String field;
 }

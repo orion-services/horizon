@@ -10,6 +10,11 @@ public class GreetingResource {
 
     @GET
     @Produces(MediaType.TEXT_PLAIN)
+    /**
+     * Retorna uma mensagem simples de saudação.
+     *
+     * @return saudação em texto puro
+     */
     public String hello() {
         return "Hello from Quarkus REST";
     }
