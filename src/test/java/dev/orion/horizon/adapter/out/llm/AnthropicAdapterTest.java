@@ -26,6 +26,7 @@ import dev.orion.horizon.config.AgentExtractorConfig;
 import dev.orion.horizon.domain.model.AgentResponse;
 import dev.orion.horizon.domain.model.LLMRequest;
 import java.io.IOException;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import okhttp3.OkHttpClient;
 import okhttp3.mockwebserver.MockResponse;
@@ -177,8 +178,8 @@ final class AnthropicAdapterTest {
             }
 
             @Override
-            public String apiKey() {
-                return key;
+            public Optional<String> apiKey() {
+                return Optional.ofNullable(key);
             }
 
             @Override
@@ -220,8 +221,8 @@ final class AnthropicAdapterTest {
         }
 
         @Override
-        public String apiKey() {
-            return "test-key";
+        public Optional<String> apiKey() {
+            return Optional.of("test-key");
         }
 
         @Override

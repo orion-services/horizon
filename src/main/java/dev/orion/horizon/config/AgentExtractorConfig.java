@@ -19,6 +19,7 @@ package dev.orion.horizon.config;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import io.smallrye.config.WithName;
+import java.util.Optional;
 
 /**
  * Configuração do agente extrator (provedor Anthropic e credenciais).
@@ -36,22 +37,25 @@ public interface AgentExtractorConfig {
     /**
      * @return identificador do provedor (ex.: ANTHROPIC)
      */
+    @WithDefault("ANTHROPIC")
     String provider();
 
     /**
      * @return modelo solicitado na API
      */
+    @WithDefault("claude-haiku-4-5")
     String model();
 
     /**
-     * @return chave de API
+     * @return chave de API (vazio se não configurado)
      */
     @WithName("api-key")
-    String apiKey();
+    Optional<String> apiKey();
 
     /**
      * @return teto padrão de tokens de saída
      */
     @WithName("max-tokens")
+    @WithDefault("1000")
     int maxTokens();
 }

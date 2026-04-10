@@ -26,6 +26,7 @@ import dev.orion.horizon.domain.model.LLMRequest;
 import dev.orion.horizon.domain.port.out.LLMProviderPort;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -40,6 +41,7 @@ import okhttp3.ResponseBody;
  * Cliente Anthropic Messages API ({@code LLMProviderPort}).
  */
 @ApplicationScoped
+@Named("anthropic")
 public class AnthropicAdapter implements LLMProviderPort {
 
     /** Versão da API exigida pelo header {@code anthropic-version}. */
@@ -92,7 +94,8 @@ public class AnthropicAdapter implements LLMProviderPort {
         final Request httpRequest =
                 new Request.Builder()
                         .url(config.baseUrl())
-                        .header("x-api-key", config.apiKey())
+                        .header("x-api-key",
+                                config.apiKey().orElse(""))
                         .header("anthropic-version", ANTHROPIC_VERSION)
                         .header("content-type", "application/json")
                         .post(RequestBody.create(body.toString(), JSON))
