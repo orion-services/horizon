@@ -16,7 +16,6 @@
 
 package dev.orion.horizon.domain.model;
 
-import dev.orion.horizon.CrawlerConfig;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -37,8 +36,8 @@ public final class CrawlJob {
     /** URL raiz do crawl. */
     public final String rootUrl;
 
-    /** Configuração efetiva utilizada na execução. */
-    public final CrawlerConfig config;
+    /** Parâmetros efetivos utilizados na execução (snapshot imutável). */
+    public final CrawlParameters parameters;
 
     /** Status atual do job. */
     public final JobStatus status;
@@ -76,7 +75,7 @@ public final class CrawlJob {
      * @param id identificador do job
      * @param userQuery consulta do usuário
      * @param rootUrl URL raiz
-     * @param config configuração efetiva
+     * @param parameters parâmetros efetivos do crawl
      * @param status status do job
      * @param finalAnswer resposta final (pode ser {@code null})
      * @param stopReason motivo de parada (pode ser {@code null})
@@ -92,7 +91,7 @@ public final class CrawlJob {
             final UUID id,
             final String userQuery,
             final String rootUrl,
-            final CrawlerConfig config,
+            final CrawlParameters parameters,
             final JobStatus status,
             final String finalAnswer,
             final StopReason stopReason,
@@ -107,7 +106,7 @@ public final class CrawlJob {
         this.id = id;
         this.userQuery = userQuery;
         this.rootUrl = rootUrl;
-        this.config = config;
+        this.parameters = parameters;
         this.status = status;
         this.finalAnswer = finalAnswer;
         this.stopReason = stopReason;
