@@ -19,6 +19,7 @@ package dev.orion.horizon.config;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import io.smallrye.config.WithName;
+import java.util.Optional;
 
 /**
  * Configuração do agente consolidador (provider Anthropic por padrão).
@@ -44,6 +45,12 @@ public interface AgentConsolidatorConfig {
      */
     @WithDefault("claude-sonnet-4-5")
     String model();
+
+    /**
+     * @return chave de API (vazio se não configurado)
+     */
+    @WithName("api-key")
+    Optional<String> apiKey();
 
     /**
      * @return teto padrão de tokens de saída
