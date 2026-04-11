@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.orion.horizon.config.OpenAiChatConfig;
 import dev.orion.horizon.domain.model.AgentResponse;
 import dev.orion.horizon.domain.model.LLMRequest;
 import dev.orion.horizon.domain.port.out.LLMProviderPort;
@@ -110,6 +111,37 @@ public class OpenAIAdapter implements LLMProviderPort {
         this.defaultMaxTokens = defaultMaxTokens;
         this.openAiUrl =
                 apiUrl != null ? apiUrl : DEFAULT_OPENAI_URL;
+    }
+
+    /**
+     * Cria o adapter a partir da configuração do agente (URL completa do
+     * endpoint, modelo e chave).
+     *
+     * @param httpClient cliente HTTP
+     * @param objectMapper serializador JSON
+     * @param config parâmetros OpenAI ({@link OpenAiChatConfig#baseUrl()} deve
+     *               apontar para {@code .../v1/chat/completions})
+     */
+    public OpenAIAdapter(
+            final OkHttpClient httpClient,
+            final ObjectMapper objectMapper,
+            final OpenAiChatConfig config
+    ) {
+        this(
+                httpClient,
+                objectMapper,
+                Objects.requireNonNull(config, "config").model(),
+                config.apiKey().orElse(""),
+                config.maxTokens(),
+                normalizeOpenAiUrl(config.baseUrl())
+        );
+    }
+
+    private static String normalizeOpenAiUrl(final String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return DEFAULT_OPENAI_URL;
+        }
+        return baseUrl.trim();
     }
 
     @Override

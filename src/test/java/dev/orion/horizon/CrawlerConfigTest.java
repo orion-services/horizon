@@ -42,7 +42,6 @@ class CrawlerConfigTest {
         assertEquals(300, config.chunkOverlap());
         assertEquals(15_000L, config.playwrightTimeoutMs());
         assertEquals(5_000L, config.jsoupEnrichTimeoutMs());
-        assertEquals(0.40, config.preThreshold(), 0.000_001);
         assertEquals(0.60, config.finalThreshold(), 0.000_001);
         assertEquals(500, config.llmDelayMs());
         assertArrayEquals(new int[]{30, 60, 120}, config.backoff429Seconds());

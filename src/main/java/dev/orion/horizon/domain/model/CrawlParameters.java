@@ -34,8 +34,7 @@ import java.util.List;
  * @param chunkOverlap sobreposição entre fragmentos consecutivos
  * @param playwrightTimeoutMs timeout Playwright (ms)
  * @param jsoupEnrichTimeoutMs timeout Jsoup (ms)
- * @param preThreshold limiar da etapa prévia (0–1)
- * @param finalThreshold limiar da etapa final (0–1)
+ * @param finalThreshold limiar de score para aceitar um link (0–1)
  * @param llmDelayMs intervalo mínimo entre chamadas ao LLM (ms)
  * @param backoff429Seconds pausas após HTTP 429 (segundos por tentativa)
  * @param maxConsecutive429 tolerância a 429 consecutivos
@@ -51,7 +50,6 @@ public record CrawlParameters(
         int chunkOverlap,
         long playwrightTimeoutMs,
         long jsoupEnrichTimeoutMs,
-        double preThreshold,
         double finalThreshold,
         int llmDelayMs,
         List<Integer> backoff429Seconds,

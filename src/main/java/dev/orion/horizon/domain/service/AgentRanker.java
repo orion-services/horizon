@@ -33,15 +33,23 @@ import java.util.PriorityQueue;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 /**
- * Agente 2 — ranqueia links em duas fases com enriquecimento Jsoup entre elas.
+ * Agente ranqueador de links — fase única com enriquecimento prévio.
  *
- * <p>Fase 1: score inicial a partir de texto âncora e contexto DOM.
- * Links abaixo de {@code preThreshold} são descartados.
- * Fase 2: após enriquecimento (title, metaDescription), score final.
- * Links abaixo de {@code finalThreshold} são descartados.
- * O resultado é uma {@link PriorityQueue} ordenada por score final decrescente.
+ * <p>Antes de chamar o LLM, enriquece <em>todos</em> os candidatos via
+ * {@link LinkEnricherPort} (title + metaDescription) e aplica um
+ * <em>pré-filtro léxico</em>: candidatos cujo URL, âncora ou título
+ * contenham algum token significativo da query são aprovados imediatamente,
+ * sem custo de tokens, com score sintético {@value #LEXICAL_SYNTHETIC_SCORE}.
+ * Apenas os candidatos sem correspondência léxica são enviados ao LLM.
+ *
+ * <p>Se a resposta do LLM for truncada (JSON sem {@code ]}), o parser tenta
+ * recuperar as entradas completas antes do ponto de corte.
+ *
+ * <p>Candidatos com {@code finalScore < finalThreshold} são descartados.
+ * O resultado é uma {@link PriorityQueue} ordenada por score decrescente.
  */
 public final class AgentRanker {
 
@@ -50,6 +58,20 @@ public final class AgentRanker {
 
     private static final Logger LOG =
             Logger.getLogger(AgentRanker.class.getName());
+
+    /**
+     * Score sintético atribuído a candidatos aprovados pelo pré-filtro léxico.
+     * Deve ser maior que {@code finalThreshold} para garantir que eles sejam
+     * enfileirados, mas menor que 1.0 para não suprimir scores reais do LLM.
+     */
+    static final double LEXICAL_SYNTHETIC_SCORE = 0.85;
+
+    /** Comprimento mínimo de um token de query para ser usado no filtro. */
+    private static final int LEXICAL_MIN_TOKEN_LENGTH = 3;
+
+    /** Padrão para remover caracteres não-alfanuméricos dos tokens. */
+    private static final Pattern NON_ALNUM =
+            Pattern.compile("[^\\p{L}\\p{N}]");
 
     private static final String SYSTEM_PROMPT =
             "Você é um ranqueador de links de navegação web.\n"
@@ -66,7 +88,6 @@ public final class AgentRanker {
     private final ObjectMapper objectMapper;
     private final RateLimiter rateLimiter;
     private final int maxTokens;
-    private final double preThreshold;
     private final double finalThreshold;
     private final long jsoupEnrichTimeoutMs;
 
@@ -79,8 +100,7 @@ public final class AgentRanker {
      * @param objectMapper mapper JSON
      * @param rateLimiter limitador de taxa compartilhado
      * @param maxTokens teto de tokens de saída
-     * @param preThreshold limiar para filtro após fase 1
-     * @param finalThreshold limiar para filtro após fase 2
+     * @param finalThreshold limiar mínimo de score para aceitar um link
      * @param jsoupEnrichTimeoutMs timeout para enriquecimento Jsoup (ms)
      */
     public AgentRanker(
@@ -90,7 +110,6 @@ public final class AgentRanker {
             final ObjectMapper objectMapper,
             final RateLimiter rateLimiter,
             final int maxTokens,
-            final double preThreshold,
             final double finalThreshold,
             final long jsoupEnrichTimeoutMs) {
         this.llmProvider =
@@ -104,13 +123,17 @@ public final class AgentRanker {
         this.rateLimiter =
                 Objects.requireNonNull(rateLimiter, "rateLimiter");
         this.maxTokens = maxTokens;
-        this.preThreshold = preThreshold;
         this.finalThreshold = finalThreshold;
         this.jsoupEnrichTimeoutMs = jsoupEnrichTimeoutMs;
     }
 
     /**
-     * Executa o ranking de duas fases para os links fornecidos.
+     * Enriquece todos os candidatos, aplica pré-filtro léxico e executa
+     * ranking via LLM nos candidatos restantes.
+     *
+     * <p>Candidatos cujo URL, âncora ou título contenha algum token da query
+     * são aprovados imediatamente (pré-filtro léxico) sem chamar o LLM.
+     * Os demais são enviados ao LLM para ranking.
      *
      * @param jobId identificador do job de crawl
      * @param threadId identificador da thread
@@ -118,7 +141,7 @@ public final class AgentRanker {
      * @param currentUrl URL atual sendo processada
      * @param candidates lista de candidatos a ranquear
      * @return fila de prioridade com candidatos aprovados, ordenada por
-     *         score final decrescente
+     *         score decrescente
      */
     public PriorityQueue<LinkCandidate> rank(
             final UUID jobId,
@@ -135,29 +158,123 @@ public final class AgentRanker {
             return new PriorityQueue<>();
         }
 
-        final List<LinkCandidate> afterPhase1 =
-                runPhase1(jobId, threadId, userQuery, currentUrl, candidates);
+        enricher.enrich(candidates, jsoupEnrichTimeoutMs);
 
-        enricher.enrich(afterPhase1, jsoupEnrichTimeoutMs);
+        final List<LinkCandidate> lexicalApproved = new ArrayList<>();
+        final List<LinkCandidate> toRank =
+                lexicalSplit(candidates, userQuery, lexicalApproved);
 
-        final List<LinkCandidate> afterPhase2 =
-                runPhase2(jobId, threadId, userQuery, currentUrl, afterPhase1);
+        if (!lexicalApproved.isEmpty()) {
+            LOG.log(Level.INFO,
+                    "Pré-filtro léxico: {0} aprovados sem LLM,"
+                    + " {1} enviados ao LLM",
+                    new Object[]{lexicalApproved.size(), toRank.size()});
+        }
+
+        final List<LinkCandidate> llmApproved;
+        if (!toRank.isEmpty()) {
+            llmApproved = runRanking(
+                    jobId, threadId, userQuery, currentUrl, toRank);
+        } else {
+            llmApproved = List.of();
+        }
 
         final PriorityQueue<LinkCandidate> queue = new PriorityQueue<>();
-        queue.addAll(afterPhase2);
+        queue.addAll(lexicalApproved);
+        queue.addAll(llmApproved);
         return queue;
     }
 
-    private List<LinkCandidate> runPhase1(
+    /**
+     * Separa candidatos em dois grupos: os que possuem correspondência léxica
+     * com a query (aprovados diretamente) e os que serão enviados ao LLM.
+     *
+     * <p>Visibilidade package-private para testes unitários.
+     *
+     * @param candidates candidatos a classificar
+     * @param userQuery consulta do usuário
+     * @param approved lista de saída para candidatos aprovados pelo pré-filtro
+     * @return candidatos sem correspondência léxica (a enviar ao LLM)
+     */
+    static List<LinkCandidate> lexicalSplit(
+            final List<LinkCandidate> candidates,
+            final String userQuery,
+            final List<LinkCandidate> approved) {
+        final List<String> tokens = queryTokens(userQuery);
+        final List<LinkCandidate> remaining = new ArrayList<>();
+        for (final LinkCandidate c : candidates) {
+            if (!tokens.isEmpty() && hasLexicalMatch(c, tokens)) {
+                approved.add(new LinkCandidate(
+                        c.url(), c.anchorText(), c.domContext(), c.ariaLabel(),
+                        c.phase1Score(), c.phase1Justification(),
+                        c.pageTitle(), c.metaDescription(),
+                        c.enrichmentFailed(),
+                        LEXICAL_SYNTHETIC_SCORE,
+                        "pré-filtro léxico: token da query encontrado"
+                ));
+            } else {
+                remaining.add(c);
+            }
+        }
+        return remaining;
+    }
+
+    /**
+     * Extrai tokens significativos da query (lowercase, sem pontuação,
+     * comprimento mínimo {@value #LEXICAL_MIN_TOKEN_LENGTH}).
+     *
+     * <p>Visibilidade package-private para testes unitários.
+     *
+     * @param query consulta do usuário em linguagem natural
+     * @return lista de tokens normalizados com comprimento adequado
+     */
+    static List<String> queryTokens(final String query) {
+        final List<String> tokens = new ArrayList<>();
+        for (final String raw : query.split("\\s+")) {
+            final String token =
+                    NON_ALNUM.matcher(raw).replaceAll("").toLowerCase();
+            if (token.length() >= LEXICAL_MIN_TOKEN_LENGTH) {
+                tokens.add(token);
+            }
+        }
+        return tokens;
+    }
+
+    /**
+     * Verifica se algum token da query aparece no URL, âncora ou título do
+     * candidato.
+     *
+     * @param c candidato a verificar
+     * @param tokens tokens normalizados da query
+     * @return {@code true} se houver correspondência léxica
+     */
+    private static boolean hasLexicalMatch(
+            final LinkCandidate c, final List<String> tokens) {
+        final String urlLower = c.url().toLowerCase();
+        final String anchorLower =
+                c.anchorText() != null ? c.anchorText().toLowerCase() : "";
+        final String titleLower =
+                c.pageTitle() != null ? c.pageTitle().toLowerCase() : "";
+        for (final String token : tokens) {
+            if (urlLower.contains(token)
+                    || anchorLower.contains(token)
+                    || titleLower.contains(token)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<LinkCandidate> runRanking(
             final UUID jobId,
             final String threadId,
             final String userQuery,
             final String currentUrl,
             final List<LinkCandidate> candidates) {
         final String userPrompt =
-                buildPhase1Prompt(userQuery, currentUrl, candidates);
+                buildRankingPrompt(userQuery, currentUrl, candidates);
         final LLMRequest request = new LLMRequest(
-                SYSTEM_PROMPT, userPrompt, AGENT_ROLE + "-phase1", maxTokens
+                SYSTEM_PROMPT, userPrompt, AGENT_ROLE, maxTokens
         );
 
         final Instant calledAt = Instant.now();
@@ -169,13 +286,13 @@ public final class AgentRanker {
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.log(Level.WARNING,
-                    "AgentRanker phase1 interrupted: {0}", e.getMessage());
+                    "AgentRanker interrupted: {0}", e.getMessage());
             persistLog(jobId, threadId, currentUrl, userPrompt,
                     null, calledAt, e.getMessage());
             return new ArrayList<>(candidates);
         } catch (final Exception e) {
             LOG.log(Level.WARNING,
-                    "AgentRanker phase1 failed: {0}", e.getMessage());
+                    "AgentRanker failed: {0}", e.getMessage());
             persistLog(jobId, threadId, currentUrl, userPrompt,
                     null, calledAt, e.getMessage());
             return new ArrayList<>(candidates);
@@ -186,10 +303,10 @@ public final class AgentRanker {
 
         final List<RankEntry> entries =
                 parseRankArray(response.rawContent);
-        return applyPhase1Scores(candidates, entries);
+        return applyScores(candidates, entries);
     }
 
-    private List<LinkCandidate> applyPhase1Scores(
+    private List<LinkCandidate> applyScores(
             final List<LinkCandidate> candidates,
             final List<RankEntry> entries) {
         final List<LinkCandidate> result = new ArrayList<>();
@@ -203,7 +320,7 @@ public final class AgentRanker {
                     break;
                 }
             }
-            if (score >= preThreshold) {
+            if (score >= finalThreshold) {
                 result.add(new LinkCandidate(
                         candidate.url(),
                         candidate.anchorText(),
@@ -211,84 +328,6 @@ public final class AgentRanker {
                         candidate.ariaLabel(),
                         score,
                         justification,
-                        candidate.pageTitle(),
-                        candidate.metaDescription(),
-                        candidate.enrichmentFailed(),
-                        null,
-                        null
-                ));
-            }
-        }
-        return result;
-    }
-
-    private List<LinkCandidate> runPhase2(
-            final UUID jobId,
-            final String threadId,
-            final String userQuery,
-            final String currentUrl,
-            final List<LinkCandidate> candidates) {
-        if (candidates.isEmpty()) {
-            return candidates;
-        }
-        final String userPrompt =
-                buildPhase2Prompt(userQuery, currentUrl, candidates);
-        final LLMRequest request = new LLMRequest(
-                SYSTEM_PROMPT, userPrompt, AGENT_ROLE + "-phase2", maxTokens
-        );
-
-        final Instant calledAt = Instant.now();
-        AgentResponse response = null;
-        try {
-            rateLimiter.acquire();
-            response = llmProvider.call(request);
-            rateLimiter.onSuccess();
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-            LOG.log(Level.WARNING,
-                    "AgentRanker phase2 interrupted: {0}", e.getMessage());
-            persistLog(jobId, threadId, currentUrl, userPrompt,
-                    null, calledAt, e.getMessage());
-            return applyFinalScoresFromPhase1(candidates);
-        } catch (final Exception e) {
-            LOG.log(Level.WARNING,
-                    "AgentRanker phase2 failed: {0}", e.getMessage());
-            persistLog(jobId, threadId, currentUrl, userPrompt,
-                    null, calledAt, e.getMessage());
-            return applyFinalScoresFromPhase1(candidates);
-        }
-
-        persistLog(jobId, threadId, currentUrl, userPrompt,
-                response, calledAt, null);
-
-        final List<RankEntry> entries =
-                parseRankArray(response.rawContent);
-        return applyPhase2Scores(candidates, entries);
-    }
-
-    private List<LinkCandidate> applyPhase2Scores(
-            final List<LinkCandidate> candidates,
-            final List<RankEntry> entries) {
-        final List<LinkCandidate> result = new ArrayList<>();
-        for (final LinkCandidate candidate : candidates) {
-            double score = candidate.phase1Score() != null
-                    ? candidate.phase1Score() : 0.0;
-            String justification = candidate.phase1Justification();
-            for (final RankEntry entry : entries) {
-                if (candidate.url().equals(entry.url)) {
-                    score = entry.score;
-                    justification = entry.justification;
-                    break;
-                }
-            }
-            if (score >= finalThreshold) {
-                result.add(new LinkCandidate(
-                        candidate.url(),
-                        candidate.anchorText(),
-                        candidate.domContext(),
-                        candidate.ariaLabel(),
-                        candidate.phase1Score(),
-                        candidate.phase1Justification(),
                         candidate.pageTitle(),
                         candidate.metaDescription(),
                         candidate.enrichmentFailed(),
@@ -300,26 +339,7 @@ public final class AgentRanker {
         return result;
     }
 
-    private List<LinkCandidate> applyFinalScoresFromPhase1(
-            final List<LinkCandidate> candidates) {
-        final List<LinkCandidate> result = new ArrayList<>();
-        for (final LinkCandidate c : candidates) {
-            final double score =
-                    c.phase1Score() != null ? c.phase1Score() : 0.0;
-            if (score >= finalThreshold) {
-                result.add(new LinkCandidate(
-                        c.url(), c.anchorText(), c.domContext(),
-                        c.ariaLabel(), c.phase1Score(),
-                        c.phase1Justification(), c.pageTitle(),
-                        c.metaDescription(), c.enrichmentFailed(),
-                        score, c.phase1Justification()
-                ));
-            }
-        }
-        return result;
-    }
-
-    private static String buildPhase1Prompt(
+    private static String buildRankingPrompt(
             final String userQuery,
             final String currentUrl,
             final List<LinkCandidate> candidates) {
@@ -327,27 +347,6 @@ public final class AgentRanker {
         sb.append("Query: ").append(userQuery).append("\n");
         sb.append("URL atual: ").append(currentUrl).append("\n\n");
         sb.append("Links a avaliar:\n");
-        for (final LinkCandidate c : candidates) {
-            sb.append("- URL: ").append(c.url()).append("\n");
-            if (c.anchorText() != null && !c.anchorText().isBlank()) {
-                sb.append("  Âncora: ").append(c.anchorText()).append("\n");
-            }
-            if (c.domContext() != null && !c.domContext().isBlank()) {
-                sb.append("  Contexto DOM: ")
-                        .append(c.domContext()).append("\n");
-            }
-        }
-        return sb.toString();
-    }
-
-    private static String buildPhase2Prompt(
-            final String userQuery,
-            final String currentUrl,
-            final List<LinkCandidate> candidates) {
-        final StringBuilder sb = new StringBuilder();
-        sb.append("Query: ").append(userQuery).append("\n");
-        sb.append("URL atual: ").append(currentUrl).append("\n\n");
-        sb.append("Links enriquecidos a avaliar:\n");
         for (final LinkCandidate c : candidates) {
             sb.append("- URL: ").append(c.url()).append("\n");
             if (c.pageTitle() != null && !c.pageTitle().isBlank()) {
@@ -358,9 +357,12 @@ public final class AgentRanker {
                 sb.append("  Descrição: ")
                         .append(c.metaDescription()).append("\n");
             }
-            if (c.phase1Score() != null) {
-                sb.append("  Score fase 1: ")
-                        .append(c.phase1Score()).append("\n");
+            if (c.anchorText() != null && !c.anchorText().isBlank()) {
+                sb.append("  Âncora: ").append(c.anchorText()).append("\n");
+            }
+            if (c.domContext() != null && !c.domContext().isBlank()) {
+                sb.append("  Contexto DOM: ")
+                        .append(c.domContext()).append("\n");
             }
         }
         return sb.toString();
@@ -388,17 +390,42 @@ public final class AgentRanker {
                 }
             }
         } catch (final Exception e) {
-            LOG.log(Level.FINE,
-                    "AgentRanker JSON parse error: {0}", e.getMessage());
+            LOG.log(Level.WARNING,
+                    "AgentRanker JSON parse error (possível truncamento da "
+                    + "resposta do LLM — aumente max-tokens do ranker): {0}",
+                    e.getMessage());
         }
         return result;
     }
 
-    private static String extractJsonArray(final String text) {
+    /**
+     * Extrai o array JSON da resposta do LLM.
+     *
+     * <p>Primeiro tenta localizar {@code [...]} completo. Se o array estiver
+     * truncado (sem {@code ]} final, indicando que o LLM atingiu o limite de
+     * tokens), tenta recuperar as entradas completas localizando o último
+     * {@code \}} antes do ponto de corte e fechando o array manualmente.
+     *
+     * <p>Visibilidade package-private para testes unitários.
+     *
+     * @param text resposta bruta do LLM
+     * @return string contendo o array JSON (possivelmente parcial, mas válido)
+     */
+    static String extractJsonArray(final String text) {
         final int start = text.indexOf('[');
         final int end = text.lastIndexOf(']');
         if (start >= 0 && end > start) {
             return text.substring(start, end + 1);
+        }
+        if (start >= 0) {
+            final int lastClose = text.lastIndexOf('}');
+            if (lastClose > start) {
+                LOG.log(Level.WARNING,
+                        "Resposta do ranker truncada — recuperando entradas "
+                        + "completas até posição {0}",
+                        lastClose);
+                return text.substring(start, lastClose + 1) + "]";
+            }
         }
         return text;
     }

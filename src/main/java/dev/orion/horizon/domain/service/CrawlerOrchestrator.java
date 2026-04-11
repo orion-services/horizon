@@ -30,9 +30,11 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -120,6 +122,7 @@ public final class CrawlerOrchestrator {
         final AtomicBoolean aborted = new AtomicBoolean(false);
         final AtomicBoolean timedOut = new AtomicBoolean(false);
         final AtomicInteger pagesVisited = new AtomicInteger(0);
+        final AtomicInteger activeWorkers = new AtomicInteger(0);
         final CopyOnWriteArrayList<CrawlResult> results =
                 new CopyOnWriteArrayList<>();
         final VisitRegistry visitRegistry = new VisitRegistry();
@@ -143,6 +146,9 @@ public final class CrawlerOrchestrator {
                 null
         );
 
+        final BlockingQueue<PageNode> workQueue = new LinkedBlockingQueue<>();
+        workQueue.add(rootNode);
+
         final ScheduledExecutorService scheduler =
                 Executors.newSingleThreadScheduledExecutor();
         scheduler.schedule(
@@ -164,7 +170,7 @@ public final class CrawlerOrchestrator {
                 final CrawlerThread thread = new CrawlerThread(
                         job.id,
                         threadId,
-                        rootNode,
+                        job.userQuery,
                         parameters,
                         browser,
                         contentExtractor,
@@ -177,7 +183,9 @@ public final class CrawlerOrchestrator {
                         aborted,
                         timedOut,
                         pagesVisited,
-                        results
+                        results,
+                        workQueue,
+                        activeWorkers
                 );
                 executor.submit(thread);
             }

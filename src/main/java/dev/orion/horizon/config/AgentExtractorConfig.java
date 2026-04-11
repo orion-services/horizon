@@ -22,39 +22,45 @@ import io.smallrye.config.WithName;
 import java.util.Optional;
 
 /**
- * Configuração do agente extrator (provedor Anthropic e credenciais).
+ * Configuração do agente extrator ({@code OLLAMA}, {@code ANTHROPIC} ou
+ * {@code OPENAI}).
  */
 @ConfigMapping(prefix = "horizon.agents.extractor")
-public interface AgentExtractorConfig {
+public interface AgentExtractorConfig extends AnthropicMessagesConfig {
 
     /**
-     * @return URL base da API Messages (permite mock em testes)
+     * {@inheritDoc}
      */
+    @Override
     @WithDefault("https://api.anthropic.com/v1/messages")
     @WithName("base-url")
     String baseUrl();
 
     /**
-     * @return identificador do provedor (ex.: ANTHROPIC)
+     * {@inheritDoc}
      */
+    @Override
     @WithDefault("ANTHROPIC")
     String provider();
 
     /**
-     * @return modelo solicitado na API
+     * {@inheritDoc}
      */
+    @Override
     @WithDefault("claude-haiku-4-5")
     String model();
 
     /**
-     * @return chave de API (vazio se não configurado)
+     * {@inheritDoc}
      */
+    @Override
     @WithName("api-key")
     Optional<String> apiKey();
 
     /**
-     * @return teto padrão de tokens de saída
+     * {@inheritDoc}
      */
+    @Override
     @WithName("max-tokens")
     @WithDefault("1000")
     int maxTokens();

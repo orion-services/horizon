@@ -90,10 +90,14 @@ public class CrawlJobService implements CrawlJobPort {
      * @param linkEnricher enriquecedor de links
      * @param persistence porta de persistência
      * @param objectMapper mapper JSON
-     * @param verifierLlm provedor LLM do verificador
-     * @param rankerLlm provedor LLM do ranqueador
-     * @param extractorLlm provedor LLM do extrator
-     * @param consolidatorLlm provedor LLM do consolidador
+     * @param verifierLlm provedor LLM do verificador (bean nomeado
+     *        {@code verifierLlm})
+     * @param rankerLlm provedor LLM do ranqueador (bean nomeado
+     *        {@code rankerLlm})
+     * @param extractorLlm provedor LLM do extrator (bean nomeado
+     *        {@code extractorLlm})
+     * @param consolidatorLlm provedor LLM do consolidador (bean nomeado
+     *        {@code consolidatorLlm})
      */
     @Inject
     public CrawlJobService(
@@ -107,10 +111,10 @@ public class CrawlJobService implements CrawlJobPort {
             final LinkEnricherPort linkEnricher,
             final PersistencePort persistence,
             final ObjectMapper objectMapper,
-            @Named("ollama") final LLMProviderPort verifierLlm,
-            @Named("ollama") final LLMProviderPort rankerLlm,
-            @Named("anthropic") final LLMProviderPort extractorLlm,
-            @Named("anthropic") final LLMProviderPort consolidatorLlm) {
+            @Named("verifierLlm") final LLMProviderPort verifierLlm,
+            @Named("rankerLlm") final LLMProviderPort rankerLlm,
+            @Named("extractorLlm") final LLMProviderPort extractorLlm,
+            @Named("consolidatorLlm") final LLMProviderPort consolidatorLlm) {
         this.crawlerConfig =
                 Objects.requireNonNull(crawlerConfig);
         this.verifierConfig =
@@ -226,7 +230,6 @@ public class CrawlJobService implements CrawlJobPort {
                             rankerLlm, linkEnricher, persistence,
                             objectMapper, rateLimiter,
                             rankerConfig.maxTokens(),
-                            params.preThreshold(),
                             params.finalThreshold(),
                             params.jsoupEnrichTimeoutMs()
                     );

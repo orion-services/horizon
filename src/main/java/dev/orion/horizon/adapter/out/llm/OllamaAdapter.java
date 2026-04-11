@@ -20,13 +20,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import dev.orion.horizon.config.AgentVerifierConfig;
+import dev.orion.horizon.config.OllamaChatConfig;
+import dev.orion.horizon.config.OllamaEndpoint;
 import dev.orion.horizon.domain.model.AgentResponse;
 import dev.orion.horizon.domain.model.LLMRequest;
 import dev.orion.horizon.domain.port.out.LLMProviderPort;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -43,8 +41,6 @@ import okhttp3.ResponseBody;
  * <p>Chama {@code POST {baseUrl}/api/chat} com {@code stream: false}.
  * Sem rate limiting externo — Ollama corre localmente.
  */
-@ApplicationScoped
-@Named("ollama")
 public class OllamaAdapter implements LLMProviderPort {
 
     /** Caminho do endpoint de chat do Ollama. */
@@ -55,20 +51,19 @@ public class OllamaAdapter implements LLMProviderPort {
 
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
-    private final AgentVerifierConfig config;
+    private final OllamaChatConfig config;
 
     /**
-     * Cria o adapter com configuração injetada (CDI).
+     * Cria o adapter com endpoint Ollama explícito (testes ou fábrica).
      *
-     * @param httpClient cliente HTTP compartilhado
+     * @param httpClient cliente HTTP
      * @param objectMapper serializador JSON
-     * @param config configuração do agente verificador
+     * @param config URL base e modelo
      */
-    @Inject
     public OllamaAdapter(
             final OkHttpClient httpClient,
             final ObjectMapper objectMapper,
-            final AgentVerifierConfig config) {
+            final OllamaChatConfig config) {
         this.httpClient =
                 Objects.requireNonNull(httpClient, "httpClient");
         this.objectMapper =
@@ -78,7 +73,7 @@ public class OllamaAdapter implements LLMProviderPort {
     }
 
     /**
-     * Cria o adapter com parâmetros diretos (para testes unitários).
+     * Cria o adapter com parâmetros diretos (atalho para testes).
      *
      * @param httpClient cliente HTTP
      * @param objectMapper serializador JSON
@@ -90,11 +85,11 @@ public class OllamaAdapter implements LLMProviderPort {
             final ObjectMapper objectMapper,
             final String baseUrl,
             final String model) {
-        this.httpClient =
-                Objects.requireNonNull(httpClient, "httpClient");
-        this.objectMapper =
-                Objects.requireNonNull(objectMapper, "objectMapper");
-        this.config = new OllamaStaticConfig(baseUrl, model);
+        this(
+                httpClient,
+                objectMapper,
+                new OllamaEndpoint(baseUrl, model)
+        );
     }
 
     @Override
@@ -204,42 +199,5 @@ public class OllamaAdapter implements LLMProviderPort {
             }
         }
         return "";
-    }
-
-    /**
-     * Configuração estática interna para uso em testes sem CDI.
-     */
-    private static final class OllamaStaticConfig
-            implements AgentVerifierConfig {
-
-        private final String baseUrl;
-        private final String model;
-
-        private OllamaStaticConfig(
-                final String baseUrl,
-                final String model) {
-            this.baseUrl = baseUrl;
-            this.model = model;
-        }
-
-        @Override
-        public String baseUrl() {
-            return baseUrl;
-        }
-
-        @Override
-        public String provider() {
-            return "OLLAMA";
-        }
-
-        @Override
-        public String model() {
-            return model;
-        }
-
-        @Override
-        public int maxTokens() {
-            return 512;
-        }
     }
 }

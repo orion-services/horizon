@@ -20,13 +20,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import dev.orion.horizon.config.AgentExtractorConfig;
+import dev.orion.horizon.config.AnthropicMessagesConfig;
 import dev.orion.horizon.domain.model.AgentResponse;
 import dev.orion.horizon.domain.model.LLMRequest;
 import dev.orion.horizon.domain.port.out.LLMProviderPort;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -40,8 +37,6 @@ import okhttp3.ResponseBody;
 /**
  * Cliente Anthropic Messages API ({@code LLMProviderPort}).
  */
-@ApplicationScoped
-@Named("anthropic")
 public class AnthropicAdapter implements LLMProviderPort {
 
     /** Versão da API exigida pelo header {@code anthropic-version}. */
@@ -52,18 +47,17 @@ public class AnthropicAdapter implements LLMProviderPort {
 
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
-    private final AgentExtractorConfig config;
+    private final AnthropicMessagesConfig config;
 
     /**
      * @param httpClient cliente HTTP (timeout configurável)
      * @param objectMapper serialização JSON
-     * @param config credenciais e modelo
+     * @param config credenciais, modelo e URL da API Messages
      */
-    @Inject
     public AnthropicAdapter(
             final OkHttpClient httpClient,
             final ObjectMapper objectMapper,
-            final AgentExtractorConfig config) {
+            final AnthropicMessagesConfig config) {
         this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
         this.objectMapper =
                 Objects.requireNonNull(objectMapper, "objectMapper");

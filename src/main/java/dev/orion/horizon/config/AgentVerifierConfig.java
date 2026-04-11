@@ -19,35 +19,48 @@ package dev.orion.horizon.config;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import io.smallrye.config.WithName;
+import java.util.Optional;
 
 /**
- * Configuração do agente verificador (provider Ollama por padrão).
+ * Configuração do agente verificador ({@code OLLAMA}, {@code ANTHROPIC} ou
+ * {@code OPENAI}).
  */
 @ConfigMapping(prefix = "horizon.agents.verifier")
-public interface AgentVerifierConfig {
+public interface AgentVerifierConfig extends AnthropicMessagesConfig {
 
     /**
-     * @return URL base da API do provider
+     * {@inheritDoc}
      */
+    @Override
     @WithDefault("http://localhost:11434")
     @WithName("base-url")
     String baseUrl();
 
     /**
-     * @return identificador do provedor (ex.: OLLAMA)
+     * {@inheritDoc}
      */
+    @Override
     @WithDefault("OLLAMA")
     String provider();
 
     /**
-     * @return modelo solicitado na API
+     * {@inheritDoc}
      */
+    @Override
     @WithDefault("llama3.1")
     String model();
 
     /**
-     * @return teto padrão de tokens de saída
+     * {@inheritDoc}
      */
+    @Override
+    @WithName("api-key")
+    Optional<String> apiKey();
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     @WithDefault("512")
     @WithName("max-tokens")
     int maxTokens();

@@ -96,14 +96,7 @@ public interface CrawlerConfig {
     long jsoupEnrichTimeoutMs();
 
     /**
-     * Limiar de score na etapa prévia (filtro antes de chamadas mais caras).
-     *
-     * @return valor entre 0 e 1
-     */
-    double preThreshold();
-
-    /**
-     * Limiar de score na etapa final de relevância ou aceitação do conteúdo.
+     * Limiar de score para aceitar um link (ranking fase única).
      *
      * @return valor entre 0 e 1
      */

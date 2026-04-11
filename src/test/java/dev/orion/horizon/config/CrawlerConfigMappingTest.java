@@ -42,7 +42,6 @@ class CrawlerConfigMappingTest {
         assertEquals(300, p.chunkOverlap());
         assertEquals(15_000L, p.playwrightTimeoutMs());
         assertEquals(5_000L, p.jsoupEnrichTimeoutMs());
-        assertEquals(0.40, p.preThreshold(), 0.000_001);
         assertEquals(0.60, p.finalThreshold(), 0.000_001);
         assertEquals(500, p.llmDelayMs());
         assertEquals(List.of(30, 60, 120), p.backoff429Seconds());
@@ -139,11 +138,6 @@ class CrawlerConfigMappingTest {
         @Override
         public long jsoupEnrichTimeoutMs() {
             return 5_000L;
-        }
-
-        @Override
-        public double preThreshold() {
-            return 0.40;
         }
 
         @Override

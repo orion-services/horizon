@@ -40,11 +40,11 @@ public class CrawlJobEntity extends PanacheEntityBase {
     public String status;
 
     /** Consulta do usuário. */
-    @Column(name = "user_query", nullable = false)
+    @Column(name = "user_query", nullable = false, columnDefinition = "TEXT")
     public String userQuery;
 
     /** URL raiz do crawl. */
-    @Column(name = "root_url", nullable = false)
+    @Column(name = "root_url", nullable = false, columnDefinition = "TEXT")
     public String rootUrl;
 
     /** Profundidade máxima configurada. */
@@ -64,11 +64,11 @@ public class CrawlJobEntity extends PanacheEntityBase {
     public int threadCount;
 
     /** Resposta final gerada pelo consolidador. */
-    @Column(name = "final_answer")
+    @Column(name = "final_answer", columnDefinition = "TEXT")
     public String finalAnswer;
 
     /** Motivo de parada. */
-    @Column(name = "stop_reason")
+    @Column(name = "stop_reason", columnDefinition = "TEXT")
     public String stopReason;
 
     /** Total de páginas visitadas. */

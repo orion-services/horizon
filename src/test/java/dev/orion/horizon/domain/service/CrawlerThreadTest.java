@@ -17,6 +17,7 @@
 package dev.orion.horizon.domain.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,7 +40,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,8 +55,14 @@ final class CrawlerThreadTest {
 
     private static final String BASE_URL = "https://example.com";
     private static final String HTML_WITH_LINK =
-            "<html><body><p>Content</p>"
-            + "<a href=\"https://example.com/page2\">Page 2</a>"
+            "<html><body>"
+            + "<nav aria-label=\"Categorias\">"
+            + "<ul>"
+            + "<li><a href=\"https://example.com/page2\""
+            + " aria-label=\"Ver Page 2\">Page 2</a></li>"
+            + "</ul>"
+            + "</nav>"
+            + "<p>Content</p>"
             + "</body></html>";
 
     private StubBrowser browser;
@@ -61,9 +70,11 @@ final class CrawlerThreadTest {
     private AtomicBoolean aborted;
     private AtomicBoolean timedOut;
     private AtomicInteger pagesVisited;
+    private AtomicInteger activeWorkers;
     private CopyOnWriteArrayList<CrawlResult> results;
     private VisitRegistry visitRegistry;
     private CrawlParameters parameters;
+    private BlockingQueue<PageNode> workQueue;
 
     @BeforeEach
     void setUp() {
@@ -72,12 +83,14 @@ final class CrawlerThreadTest {
         aborted = new AtomicBoolean(false);
         timedOut = new AtomicBoolean(false);
         pagesVisited = new AtomicInteger(0);
+        activeWorkers = new AtomicInteger(0);
         results = new CopyOnWriteArrayList<>();
         visitRegistry = new VisitRegistry();
+        workQueue = new LinkedBlockingQueue<>();
         parameters = new CrawlParameters(
                 2, 10, 60000L, 1, false,
                 10, 100, 10, 5000L, 2000L,
-                0.4, 0.6, 0, List.of(), 3
+                0.6, 0, List.of(), 3
         );
     }
 
@@ -105,10 +118,11 @@ final class CrawlerThreadTest {
     void alreadyVisitedUrlSkipped() {
         final PageNode root = minimalNode(BASE_URL, 0);
         visitRegistry.markVisited(BASE_URL, root);
+        workQueue.add(root);
 
         final CrawlerThread thread =
                 buildThread(true, new StubRankerProvider());
-        thread.crawl(root);
+        thread.run();
 
         assertEquals(0, pagesVisited.get());
     }
@@ -116,10 +130,11 @@ final class CrawlerThreadTest {
     @Test
     void browserFailureResultsInDiscardedStatus() {
         final StubBrowser failBrowser = new StubBrowser(null);
+        workQueue.add(minimalNode(BASE_URL, 0));
 
         final CrawlerThread thread =
                 buildThread(true, new StubRankerProvider(), failBrowser);
-        thread.crawl(minimalNode(BASE_URL, 0));
+        thread.run();
 
         assertTrue(pagesVisited.get() > 0);
         assertTrue(results.isEmpty());
@@ -127,9 +142,11 @@ final class CrawlerThreadTest {
 
     @Test
     void relevantChunksProduceResults() {
+        workQueue.add(minimalNode(BASE_URL, 0));
+
         final CrawlerThread thread =
                 buildThread(true, new StubRankerProvider());
-        thread.crawl(minimalNode(BASE_URL, 0));
+        thread.run();
 
         assertTrue(pagesVisited.get() > 0);
         assertTrue(results.size() > 0);
@@ -137,24 +154,42 @@ final class CrawlerThreadTest {
 
     @Test
     void irrelevantChunksProduceNoResults() {
+        workQueue.add(minimalNode(BASE_URL, 0));
+
         final CrawlerThread thread =
                 buildThread(false, new StubRankerProvider());
-        thread.crawl(minimalNode(BASE_URL, 0));
+        thread.run();
 
         assertTrue(pagesVisited.get() > 0);
         assertTrue(results.isEmpty());
     }
 
     @Test
-    void depthLimitPreventsDeepRecursion() {
+    void sameDocumentUnifiesRootWithAndWithoutTrailingSlash() {
+        assertTrue(CrawlerThread.isSameDocument(
+                "https://www.example.com",
+                "https://www.example.com/"));
+    }
+
+    @Test
+    void sameDocumentFalseForDifferentPaths() {
+        assertFalse(CrawlerThread.isSameDocument(
+                "https://example.com/a",
+                "https://example.com/b"));
+    }
+
+    @Test
+    void depthLimitPreventsChildrenFromBeingEnqueued() {
         final CrawlParameters shallow = new CrawlParameters(
                 0, 10, 60000L, 1, false,
                 10, 100, 10, 5000L, 2000L,
-                0.4, 0.6, 0, List.of(), 3
+                0.6, 0, List.of(), 3
         );
+        workQueue.add(minimalNode(BASE_URL, 0));
+
         final CrawlerThread thread = new CrawlerThread(
                 UUID.randomUUID(), "t-test",
-                minimalNode(BASE_URL, 0),
+                "test query",
                 shallow,
                 browser,
                 new ContentExtractor(10),
@@ -164,9 +199,10 @@ final class CrawlerThreadTest {
                 buildRanker(new StubRankerProvider()),
                 visitRegistry,
                 persistence,
-                aborted, timedOut, pagesVisited, results
+                aborted, timedOut, pagesVisited, results,
+                workQueue, activeWorkers
         );
-        thread.crawl(minimalNode(BASE_URL, 0));
+        thread.run();
 
         assertEquals(1, visitRegistry.size());
     }
@@ -183,7 +219,7 @@ final class CrawlerThreadTest {
             final BrowserPort browserPort) {
         return new CrawlerThread(
                 UUID.randomUUID(), "t-test",
-                minimalNode(BASE_URL, 0),
+                "test query",
                 parameters,
                 browserPort,
                 new ContentExtractor(10),
@@ -193,7 +229,8 @@ final class CrawlerThreadTest {
                 buildRanker(rankerProvider),
                 visitRegistry,
                 persistence,
-                aborted, timedOut, pagesVisited, results
+                aborted, timedOut, pagesVisited, results,
+                workQueue, activeWorkers
         );
     }
 
@@ -235,7 +272,7 @@ final class CrawlerThreadTest {
                 new ObjectMapper(),
                 new RateLimiter(0, List.of(), 3, ms -> { }),
                 1024,
-                0.4, 0.6, 2000L
+                0.6, 2000L
         );
     }
 

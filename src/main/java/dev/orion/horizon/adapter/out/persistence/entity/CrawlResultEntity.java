@@ -44,7 +44,7 @@ public class CrawlResultEntity extends PanacheEntityBase {
     public String threadId;
 
     /** URL de origem do resultado. */
-    @Column(name = "source_url", nullable = false)
+    @Column(name = "source_url", nullable = false, columnDefinition = "TEXT")
     public String sourceUrl;
 
     /** Cadeia de URLs que levou ao resultado. */
@@ -60,7 +60,7 @@ public class CrawlResultEntity extends PanacheEntityBase {
     public Double pageLinkScore;
 
     /** Conteúdo extraído. */
-    @Column(name = "extracted_content")
+    @Column(name = "extracted_content", columnDefinition = "TEXT")
     public String extractedContent;
 
     /** Fatos-chave extraídos. */
@@ -71,11 +71,11 @@ public class CrawlResultEntity extends PanacheEntityBase {
     public Double completeness;
 
     /** Aspectos faltantes. */
-    @Column(name = "missing_aspects")
+    @Column(name = "missing_aspects", columnDefinition = "TEXT")
     public String missingAspects;
 
     /** Método de extração utilizado. */
-    @Column(name = "extraction_method")
+    @Column(name = "extraction_method", columnDefinition = "TEXT")
     public String extractionMethod;
 
     /** Timestamp em que o resultado foi encontrado. */

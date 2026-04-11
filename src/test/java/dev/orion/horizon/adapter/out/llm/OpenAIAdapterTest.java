@@ -22,9 +22,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.orion.horizon.config.OpenAiChatConfig;
 import dev.orion.horizon.domain.model.AgentResponse;
 import dev.orion.horizon.domain.model.LLMRequest;
 import java.io.IOException;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import okhttp3.OkHttpClient;
 import okhttp3.mockwebserver.MockResponse;
@@ -176,6 +178,36 @@ final class OpenAIAdapterTest {
         assertEquals("gpt-4-turbo", adapter.getModelName());
     }
 
+    @Test
+    void callViaOpenAiChatConfigUsesBaseUrl() throws Exception {
+        final String json =
+                "{\"choices\":[{\"message\":{\"content\":\"cfg\"}}],"
+                + "\"usage\":{}}";
+        server.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(json)
+                        .addHeader("content-type", "application/json")
+        );
+
+        final String url = baseUrl();
+        final OpenAIAdapter adapter =
+                new OpenAIAdapter(
+                        new OkHttpClient(),
+                        new ObjectMapper(),
+                        new TestOpenAiCfg(
+                                url,
+                                "gpt-4o-mini",
+                                Optional.of("test-key"),
+                                256
+                        )
+                );
+
+        final AgentResponse resp =
+                adapter.call(new LLMRequest("s", "u", "r", 64));
+        assertEquals("cfg", resp.rawContent);
+    }
+
     private String baseUrl() {
         return server.url("/v1/chat/completions").toString();
     }
@@ -189,5 +221,13 @@ final class OpenAIAdapterTest {
                 256,
                 url
         );
+    }
+
+    private record TestOpenAiCfg(
+            String baseUrl,
+            String model,
+            Optional<String> apiKey,
+            int maxTokens
+    ) implements OpenAiChatConfig {
     }
 }

@@ -100,8 +100,11 @@ public class AgentCallEntity extends PanacheEntityBase {
     @Column(name = "http_status")
     public Integer httpStatus;
 
-    /** Mensagem de erro, se houver. */
-    @Column(name = "error_message")
+    /**
+     * Mensagem de erro, se houver (Hibernate mapeia para VARCHAR(255) sem
+     * length explícito).
+     */
+    @Column(name = "error_message", length = 255)
     public String errorMessage;
 
     /** Timestamp da chamada. */

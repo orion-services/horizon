@@ -40,8 +40,8 @@ import org.mockito.Mockito;
 /**
  * Testes de integração {@link QuarkusTest} para os 3 endpoints REST.
  *
- * <p>BrowserPort e LLMProviderPorts são mockados para evitar chamadas
- * reais ao browser e aos provedores de LLM.
+ * <p>BrowserPort e os quatro {@link LLMProviderPort} nomeados são mockados
+ * para evitar chamadas reais ao browser e aos provedores de LLM.
  */
 @QuarkusTest
 class HorizOnApiTest {
@@ -55,12 +55,20 @@ class HorizOnApiTest {
     BrowserPort browserPort;
 
     @InjectMock
-    @Named("ollama")
+    @Named("verifierLlm")
     LLMProviderPort verifierLlm;
 
     @InjectMock
-    @Named("anthropic")
+    @Named("rankerLlm")
+    LLMProviderPort rankerLlm;
+
+    @InjectMock
+    @Named("extractorLlm")
     LLMProviderPort extractorLlm;
+
+    @InjectMock
+    @Named("consolidatorLlm")
+    LLMProviderPort consolidatorLlm;
 
     @BeforeEach
     void configureMocks() {
@@ -85,19 +93,64 @@ class HorizOnApiTest {
                         .httpStatus(200)
                         .build();
 
+        final AgentResponse rankerStub =
+                AgentResponse.builder()
+                        .rawContent(
+                                "[{\"url\":\"https://example.com\","
+                                + "\"score\":0.2,"
+                                + "\"justification\":\"test\"}]"
+                        )
+                        .providerUsed("STUB")
+                        .modelUsed("stub")
+                        .inputTokens(1)
+                        .outputTokens(1)
+                        .latencyMs(1L)
+                        .httpStatus(200)
+                        .build();
+
+        final AgentResponse consolidatorStub =
+                AgentResponse.builder()
+                        .rawContent(
+                                "{\"answer\":\"stub\","
+                                + "\"fields\":{},"
+                                + "\"sources\":[]}"
+                        )
+                        .providerUsed("STUB")
+                        .modelUsed("stub")
+                        .inputTokens(1)
+                        .outputTokens(1)
+                        .latencyMs(1L)
+                        .httpStatus(200)
+                        .build();
+
         Mockito.when(verifierLlm.call(
                 Mockito.any(LLMRequest.class)))
                 .thenReturn(stubResponse);
+        Mockito.when(rankerLlm.call(
+                Mockito.any(LLMRequest.class)))
+                .thenReturn(rankerStub);
         Mockito.when(extractorLlm.call(
                 Mockito.any(LLMRequest.class)))
                 .thenReturn(stubResponse);
+        Mockito.when(consolidatorLlm.call(
+                Mockito.any(LLMRequest.class)))
+                .thenReturn(consolidatorStub);
+
         Mockito.when(verifierLlm.getProviderName())
                 .thenReturn("STUB");
         Mockito.when(verifierLlm.getModelName())
                 .thenReturn("stub");
+        Mockito.when(rankerLlm.getProviderName())
+                .thenReturn("STUB");
+        Mockito.when(rankerLlm.getModelName())
+                .thenReturn("stub");
         Mockito.when(extractorLlm.getProviderName())
                 .thenReturn("STUB");
         Mockito.when(extractorLlm.getModelName())
+                .thenReturn("stub");
+        Mockito.when(consolidatorLlm.getProviderName())
+                .thenReturn("STUB");
+        Mockito.when(consolidatorLlm.getModelName())
                 .thenReturn("stub");
     }
 

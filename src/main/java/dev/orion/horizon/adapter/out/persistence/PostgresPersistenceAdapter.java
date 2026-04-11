@@ -48,6 +48,29 @@ public class PostgresPersistenceAdapter implements PersistencePort {
     /** Número de colunas na exportação CSV. */
     private static final int CSV_COLUMNS = 25;
 
+    /**
+     * Limite alinhado a {@link AgentCallEntity} (Hibernate
+     * {@code VARCHAR(65535)} / colunas de texto longo).
+     */
+    private static final int MAX_AGENT_CALL_LOB_CHARS = 65535;
+
+    /**
+     * Hibernate usa {@code VARCHAR(255)} quando {@code error_message} não tem
+     * {@code length} explícito; mensagens de API (ex.: JSON de erro) podem
+     * ultrapassar.
+     */
+    private static final int MAX_AGENT_CALL_ERROR_CHARS = 255;
+
+    private static String truncateToMaxChars(final String s, final int max) {
+        if (s == null || s.length() <= max) {
+            return s;
+        }
+        if (max <= 3) {
+            return s.substring(0, max);
+        }
+        return s.substring(0, max - 3) + "...";
+    }
+
     @Override
     @Transactional
     public void saveJob(final CrawlJob job) {
@@ -174,9 +197,12 @@ public class PostgresPersistenceAdapter implements PersistencePort {
         entity.pageUrl = log.pageUrl();
         entity.chunkIndex = log.chunkIndex();
         entity.chunkTotal = log.chunkTotal();
-        entity.systemPrompt = log.systemPrompt();
-        entity.userPrompt = log.userPrompt();
-        entity.rawResponse = log.rawResponse();
+        entity.systemPrompt = truncateToMaxChars(
+                log.systemPrompt(), MAX_AGENT_CALL_LOB_CHARS);
+        entity.userPrompt =
+                truncateToMaxChars(log.userPrompt(), MAX_AGENT_CALL_LOB_CHARS);
+        entity.rawResponse =
+                truncateToMaxChars(log.rawResponse(), MAX_AGENT_CALL_LOB_CHARS);
         entity.parsedRelevant =
                 log.parsedRelevant() != null
                         ? log.parsedRelevant().toString()
@@ -186,7 +212,9 @@ public class PostgresPersistenceAdapter implements PersistencePort {
         entity.outputTokens = log.outputTokens();
         entity.latencyMs = log.latencyMs();
         entity.httpStatus = log.httpStatus();
-        entity.errorMessage = log.errorMessage();
+        entity.errorMessage =
+                truncateToMaxChars(
+                        log.errorMessage(), MAX_AGENT_CALL_ERROR_CHARS);
         entity.calledAt =
                 log.calledAt() != null ? log.calledAt() : Instant.now();
         entity.persist();
@@ -356,7 +384,6 @@ public class PostgresPersistenceAdapter implements PersistencePort {
                 300,
                 15000L,
                 5000L,
-                0.40,
                 0.60,
                 500,
                 List.of(30, 60, 120),

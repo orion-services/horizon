@@ -19,6 +19,7 @@ package dev.orion.horizon.domain.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.orion.horizon.domain.model.AgentCallLog;
@@ -119,6 +120,74 @@ final class AgentExtractorTest {
 
         assertNotNull(result);
         assertNotNull(result.extractedContent);
+    }
+
+    @Test
+    void jsonWithTrailingTextContainingBracesStillParses() {
+        llmProvider.rawContent =
+                "{\"extractedContent\": \"JWT\","
+                + " \"keyFacts\": [],"
+                + " \"fields\": {},"
+                + " \"completeness\": \"PARTIAL\","
+                + " \"missingAspects\": null}\n"
+                + "Nota: grupos usam { e } para delimitar.";
+
+        final CrawlResult result = extractor.extract(
+                UUID.randomUUID(), "t1",
+                buildContext(),
+                List.of("chunk"),
+                List.of(),
+                0.5
+        );
+
+        assertEquals("JWT", result.extractedContent);
+    }
+
+    @Test
+    void extractedContentNestedObjectIsSerializedToString() {
+        llmProvider.rawContent =
+                "{\"extractedContent\": {"
+                + " \"definicao\": \"JWT assina tokens\","
+                + " \"estrutura\": \"header.payload.signature\""
+                + "},"
+                + " \"keyFacts\": [\"Fato\"],"
+                + " \"fields\": {},"
+                + " \"completeness\": \"COMPLETE\","
+                + " \"missingAspects\": null}";
+
+        final CrawlResult result = extractor.extract(
+                UUID.randomUUID(), "t1",
+                buildContext(),
+                List.of("chunk"),
+                List.of(),
+                0.5
+        );
+
+        assertNotNull(result.extractedContent);
+        assertFalse(result.extractedContent.isBlank());
+        assertTrue(result.extractedContent.contains("definicao"));
+    }
+
+    @Test
+    void markdownFenceWrappedJsonParses() {
+        llmProvider.rawContent =
+                "```json\n"
+                + "{\"extractedContent\": \"Dentro do fence\","
+                + " \"keyFacts\": [],"
+                + " \"fields\": {},"
+                + " \"completeness\": \"COMPLETE\","
+                + " \"missingAspects\": null}\n"
+                + "```";
+
+        final CrawlResult result = extractor.extract(
+                UUID.randomUUID(), "t1",
+                buildContext(),
+                List.of("chunk"),
+                List.of(),
+                0.5
+        );
+
+        assertEquals("Dentro do fence", result.extractedContent);
     }
 
     @Test

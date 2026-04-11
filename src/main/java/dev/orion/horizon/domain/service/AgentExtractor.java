@@ -195,11 +195,11 @@ public final class AgentExtractor {
             );
         }
         try {
-            final String json = extractJson(rawContent);
+            final String json = extractJsonObject(rawContent);
             final JsonNode node = objectMapper.readTree(json);
 
             final String extractedContent =
-                    node.path("extractedContent").asText("");
+                    readExtractedContent(node);
             final List<String> keyFacts =
                     parseStringArray(node.path("keyFacts"));
             final String completenessStr =
@@ -260,13 +260,92 @@ public final class AgentExtractor {
         );
     }
 
-    private static String extractJson(final String text) {
-        final int start = text.indexOf('{');
-        final int end = text.lastIndexOf('}');
-        if (start >= 0 && end > start) {
-            return text.substring(start, end + 1);
+    /**
+     * Extrai o primeiro objeto JSON da resposta do LLM.
+     *
+     * <p>Evita o erro de cortar do primeiro "{" ao último "}" quando há texto
+     * após o JSON (ex.: explicação com chaves literais) ou múltiplos objetos.
+     * Opcionalmente remove cercas markdown tipo fenced code block.
+     */
+    private static String extractJsonObject(final String text) {
+        if (text == null) {
+            return "";
+        }
+        final String stripped = stripMarkdownCodeFence(text.trim());
+        final int start = stripped.indexOf('{');
+        if (start < 0) {
+            return stripped;
+        }
+        int depth = 0;
+        boolean inString = false;
+        boolean escape = false;
+        for (int i = start; i < stripped.length(); i++) {
+            final char c = stripped.charAt(i);
+            if (escape) {
+                escape = false;
+                continue;
+            }
+            if (inString) {
+                if (c == '\\') {
+                    escape = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+                continue;
+            }
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return stripped.substring(start, i + 1);
+                }
+            }
+        }
+        return stripped.substring(start);
+    }
+
+    private static String stripMarkdownCodeFence(final String text) {
+        if (!text.startsWith("```")) {
+            return text;
+        }
+        final int firstNl = text.indexOf('\n');
+        if (firstNl < 0) {
+            return text;
+        }
+        final String rest = text.substring(firstNl + 1);
+        final int closing = rest.indexOf("```");
+        if (closing >= 0) {
+            return rest.substring(0, closing).trim();
         }
         return text;
+    }
+
+    /**
+     * Lê {@code extractedContent}: string direta, ou serializa objeto/array
+     * quando o modelo devolve estrutura em vez de texto escapado (caso comum
+     * sem cercas {@code ```json}).
+     */
+    private String readExtractedContent(final JsonNode root) {
+        final JsonNode ec = root.get("extractedContent");
+        if (ec == null || ec.isNull()) {
+            return "";
+        }
+        if (ec.isTextual()) {
+            return ec.asText("");
+        }
+        if (ec.isObject() || ec.isArray()) {
+            try {
+                return objectMapper.writeValueAsString(ec);
+            } catch (final Exception e) {
+                return ec.toString();
+            }
+        }
+        return ec.asText("");
     }
 
     private static List<String> parseStringArray(final JsonNode node) {
